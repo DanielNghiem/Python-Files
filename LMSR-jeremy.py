@@ -37,8 +37,8 @@ class Market(object):
 
 class Stock(object):
     def __init__(self, name, counts={NO:0, YES:0}):
-        self.counts = counts
-        self.name=name
+        self.counts = counts.copy()
+        self.name = name
 
 
     def price(self, option):
