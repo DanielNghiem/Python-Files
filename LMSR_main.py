@@ -1,154 +1,124 @@
-import math
+from math import exp, log, floor
 from collections import defaultdict
 
-#3/25/15
 
-#To DO: define __repr__ for User class
-#To Do: define Expected Worth function
-
-#3/27:  Added user.printPortfolio() function
-#       Added user.getWorth() function
-#       Added limitBuy() function (not complete)
-#       What is User.portfolio when portfolio is empty?
-#       Where should I define the variable b and cost function?
-#       Need to simplify limitBuy() code
+sensitivity=30
+NO = 0
+YES = 1
 
 
-b=30
+# addDicts: {key: value}, {key:value} -> {key:value}
+# output a new dictionary which contains all the keys in both
+# input dictionaries, and adds together the values when a key
+# is in both input dictionaries
+#
+# WARNING: this does a shallow copy of the values
+# of the two dictionaries
+# d1 = {1:2, 2:5}, d2 = {1:7, 4:6} should output {1:9, 2:5, 4:6}
+def addDicts(d1, d2):
+    d = d1.copy()
+
+    for key, value in d2.items():
+        if key in d1:
+            d[key] += value
+        else:
+            d[key] = value
+
+    return d
 
 
+#helper function used by all stocks
+def cost(u, v):
+    return sensitivity*log(exp(u/sensitivity) + exp(v/sensitivity))
 
-
-def cost(u, v):         #global cost function used by all Stocks
-        c = b*math.log(math.exp(u/b)+ math.exp(v/b))
-        return c
-
-
-    
 
 class Stock(object):
-   
-    stockList=[]    #maintain list of stock 
-    
-    def __init__(self, name, yesCount=0, noCount=0): #yesCount and noCount is a count of number of shares sold
-                                                     #Later: initialize Stock object with initial price
-        self.yesCount=yesCount
-        self.noCount=noCount
-        self.name=name
+    def __init__(self, name, counts={NO:0, YES:0}):
+        self.counts = counts.copy()
+        self.name = name
 
-        Stock.stockList.append(self)
 
-    
-    def yes_price(self): #returns current price of 'yes' Stock
-        
-            return math.exp(self.yesCount/b)/(math.exp(self.yesCount/b)+math.exp(self.noCount/b))
-              
-            
-    def no_price(self): #returns currect price of 'no' Stock
+    def price(self, option):
+        numerator = exp(self.counts[option]/sensitivity)
+        denominator = exp(self.counts[NO]/sensitivity) + exp(self.counts[YES]/sensitivity)
 
-            return math.exp(self.noCount/b)/(math.exp(self.yesCount/b)+math.exp(self.noCount/b))
-        
+        return numerator / denominator
 
-    def quotePayment(self, yesChange=0, noChange=0):    #returns the cost buying/selling Yes or No stock
-                                                        
-            return cost(self.yesCount+yesChange, self.noCount+noChange)-cost(self.yesCount, self.noCount)
-            
+    #list -> float
+    #input: a list [n,m]  output: payment required to make proposed changes
+    #where n is number of YES shares to buy/sell
+    #and m is the number of NO shares to buy/sell
+    def quotePayment(self, changes):
+        newCost = cost(self.counts[NO] + changes[NO], self.counts[YES] + changes[YES])
+        currentCost = cost(self.counts[NO], self.counts[YES])
+
+        return newCost - currentCost
+
 
     def __repr__(self):
-            return "%s: yesCount : %d, noCount : %d" % (self.name, self.yesCount, self.noCount)
+        return "%s(YES=%d,NO=%d)" % (self.name, self.counts[YES], self.counts[NO])
+
+
+    def __hash__(self):
+        return hash(self.name)
 
 
 
-
-
-
-        
-class User(object):       
-    def __init__(self, name='Unnamed', money=1000):
-
+class User(object):
+    def __init__(self, name='', money=1000):
         self.name=name
         self.money=money
 
-        self.portfolio = defaultdict(lambda: [0,0]) #create a dictionary of stock holdings for user
-                                                    #key= 'stock name'; value = [number of yes stock, number of no stock]
-    
-    def getHoldings(self, stockname):
-        return self.portfolio[stockname]
+        self.portfolio = defaultdict(lambda: [0,0])
 
-    def printPortfolio(self):                   #prints user's tuple of stockname, [yesStock, noStock]
+
+    def printPortfolio(self):
         for stockname,holdings in self.portfolio.items():
             print (stockname, holdings)
 
-    def getWorth(self):                         #returns "expected value" of user worth
-    
+
+    def getWorth(self):
         worth = self.money
-        
-        for stock in Stock.stockList:
-           worth = worth + stock.yes_price() * self.portfolio[stock.name][0] + stock.no_price()*self.portfolio[stock.name][1]    
-        return worth   
-            
-    
-        
+
+        for stock, holdings in self.portfolio.items():
+           worth += holdings[NO] * stock.price(NO) + holdings[YES] * stock.price(YES)
+
+        return worth
+
 
     def __repr__(self):
         return "Name: %s; Money: %d; Net Worth: %d" % (self.name, self.money, self.getWorth())
 
 
 
+# buy: User, Stock, int, int -> None
+# stocktype is either the variable NO=0 or YES=1
+def buy(user, stock, stocktype, quantity):
+    changes = {0:0, 0:0}
+    changes[stocktype] = quantity
+    payment = stock.quotePayment(changes)
 
+    if -quantity > user.portfolio[stock][stocktype]:
+        print("You can't sell what you don't have! Transaction not executed.")
+    elif user.money < payment:
+        print("Not enough money! Transaction not executed.")
+    else:
+        user.portfolio[stock][stocktype] = user.portfolio[stock][stocktype] + quantity
+        user.money = user.money - payment
+        stock.counts = addDicts(stock.counts, {stocktype: quantity})
 
+#User, Stock, int, float -> None
+#limitbuy makes a transaction for User to buy a Stock
+#until it's price reaches priceLimit
+def limitbuy(user, stock, stocktype, priceLimit):
 
-def buy(user, stock , stocktype , quantity):                        #'stocktype' either 'Yes' or 'No'
+    if stocktype == 'Yes':
+        changeInQuantity = floor(sensitivity*log( priceLimit/ (1-priceLimit)) + stock.noCount - stock.yesCount)
 
-    if stocktype == 'Yes':  #if buy/selling "Yes"
-        if  -quantity > user.portfolio[stock.name][0]:              # trying to sell more shares than owned
-            print("You can't sell what you don't have! Transaction not executed.")
-
-        
-        elif user.money < stock.quotePayment(quantity, 0):          #check if user has enough money
-            print("Not enough money! Transaction not executed.")
-
-        else:                           
-            (user.getHoldings(stock.name))[0]= (user.getHoldings(stock.name))[0]+ quantity
-                                                                    #update User stock holdings
-            user.money = user.money - stock.quotePayment(quantity, 0) #update User money
-            stock.yesCount= stock.yesCount+quantity                 #update Stock's total "yes" count
-            
-    if stocktype == 'No':   #if buy/selling "No" stock
-        if  -quantity > user.portfolio[stock.name][1]:              #if trying to sell more shares than owned
-            print("You can't sell what you don't have! Transaction not executed.")
-
-        
-        elif user.money < stock.quotePayment(0,quantity):           #check if user has enough money
-            print("Not enough money! Transaction not executed.")
-
-        else:                           
-            (user.getHoldings(stock.name))[1]= (user.getHoldings(stock.name))[1]+ quantity
-                                                                    #update User stock holdings
-            user.money = user.money - stock.quotePayment(0, quantity) #update User money
-            stock.noCount= stock.noCount+quantity                   #update Stock's total "no" count
-
-
-
-def limitBuy(user, stock, stocktype, priceLimit):  #buys a certain Stock until its price reaches pricelimit
-
-    if stocktype== 'Yes':
-                           #NEED to check pricelimit is between 0 and 1
-        changeInQuantity = math.floor( b*math.log( priceLimit/ (1-priceLimit)) + stock.noCount - stock.yesCount )
-
-        #if priceLimit is greater than current price:check if user can afford the transaction
-        
-        #if priceLimit is less than current price: check if user owns enough shares to sell
-
-        #update User stock holdings
         user.getHoldings(stock.name)[0] =  user.getHoldings(stock.name)[0] + changeInQuantity
-        #update User money
         user.money = user.money - stock.quotePayment(changeInQuantity,0)
-        #update Stock's share count
         stock.yesCount = stock.yesCount + changeInQuantity
 
-
-    
-
-
+    #TODO: complete this!
+    return None
 
